@@ -1,0 +1,22 @@
+{
+  "name": "hydra-saml-auth",
+  "version": "1.0.0",
+  "description": "SAML Authentication for Hydra",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "extract-cert": "node extract-cert.js"
+  },
+  "dependencies": {
+    "ejs": "^3.1.10",
+    "express": "^4.18.2",
+    "express-session": "^1.17.3",
+    "passport": "^0.6.0",
+    "passport-saml": "^3.2.4",
+    "xml2js": "^0.6.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
