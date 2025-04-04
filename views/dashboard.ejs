@@ -1,4 +1,4 @@
-<!-- dashboard.ejs -->
+<!-- dashboard.ejs with OpenWebUI Account Management section added -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -49,9 +49,56 @@
       text-decoration: none;
       border-radius: 4px;
       transition: background-color 0.3s;
+      border: none;
+      cursor: pointer;
+      font-size: 16px;
     }
     .btn:hover {
       background-color: #d32f2f;
+    }
+    .btn-primary {
+      background-color: #4CAF50;
+    }
+    .btn-primary:hover {
+      background-color: #388E3C;
+    }
+    .form-group {
+      margin-bottom: 15px;
+    }
+    .form-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+    .form-group input {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+    .webui-section {
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 1px solid #eee;
+    }
+    .hidden {
+      display: none;
+    }
+    .message {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 4px;
+    }
+    .success {
+      background-color: #dff0d8;
+      color: #3c763d;
+      border: 1px solid #d6e9c6;
+    }
+    .error {
+      background-color: #f2dede;
+      color: #a94442;
+      border: 1px solid #ebccd1;
     }
   </style>
 </head>
@@ -74,10 +121,191 @@
         <p>You have successfully authenticated via SAML SSO from Azure AD.</p>
       </div>
       
-      <div class="actions">
+      <!-- OpenWebUI Account Management Section -->
+      <div class="webui-section">
+        <h3>OpenWebUI Account Management</h3>
+        <div id="webui-status-loading">
+          <p>Checking your OpenWebUI account status...</p>
+        </div>
+        
+        <!-- Account doesn't exist section -->
+        <div id="webui-create-account" class="hidden">
+          <p>You don't have an OpenWebUI account yet.</p>
+          <form id="create-account-form">
+            <div class="form-group">
+              <label for="new-password">Set Password:</label>
+              <input type="password" id="new-password" name="password" required>
+            </div>
+            <div class="form-group">
+              <label for="confirm-password">Confirm Password:</label>
+              <input type="password" id="confirm-password" name="confirm-password" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Create OpenWebUI Account</button>
+          </form>
+          <div id="create-account-message"></div>
+        </div>
+        
+        <!-- Account exists section -->
+        <div id="webui-account-exists" class="hidden">
+          <p>You have an existing OpenWebUI account.</p>
+          <p><strong>Username:</strong> <span id="webui-username"></span></p>
+          <p><strong>Role:</strong> <span id="webui-role"></span></p>
+          
+          <div id="change-password-section">
+            <h4>Change Password</h4>
+            <form id="change-password-form">
+              <div class="form-group">
+                <label for="new-password-change">New Password:</label>
+                <input type="password" id="new-password-change" name="new-password" required>
+              </div>
+              <div class="form-group">
+                <label for="confirm-password-change">Confirm New Password:</label>
+                <input type="password" id="confirm-password-change" name="confirm-password" required>
+              </div>
+              <button type="submit" class="btn btn-primary">Update Password</button>
+            </form>
+            <div id="change-password-message"></div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="actions" style="margin-top: 30px;">
         <a href="/logout" class="btn">Logout</a>
       </div>
     </div>
   </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const email = "<%= user.email %>";
+      const name = "<%= user.firstName %> <%= user.lastName %>";
+      
+      // Check if user exists in OpenWebUI
+      checkUserExists(email, name);
+      
+      // Setup form handlers
+      document.getElementById('create-account-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        createAccount(email, name);
+      });
+      
+      document.getElementById('change-password-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        changePassword(email);
+      });
+    });
+    
+    // Function to check if user exists in OpenWebUI
+    function checkUserExists(email, name) {
+      // This would be an AJAX call to your backend
+      fetch('/api/webui/check-user', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: email })
+      })
+      .then(response => response.json())
+      .then(data => {
+        document.getElementById('webui-status-loading').classList.add('hidden');
+        
+        if (data.exists) {
+          // Show account exists section
+          document.getElementById('webui-account-exists').classList.remove('hidden');
+          document.getElementById('webui-username').textContent = data.username;
+          document.getElementById('webui-role').textContent = data.role;
+        } else {
+          // Show create account section
+          document.getElementById('webui-create-account').classList.remove('hidden');
+        }
+      })
+      .catch(error => {
+        console.error('Error checking user:', error);
+        document.getElementById('webui-status-loading').innerHTML = 
+          '<p class="error">Error checking account status. Please try again later.</p>';
+      });
+    }
+    
+    // Function to create an account
+    function createAccount(email, name) {
+      const password = document.getElementById('new-password').value;
+      const confirmPassword = document.getElementById('confirm-password').value;
+      const messageDiv = document.getElementById('create-account-message');
+      
+      // Check if passwords match
+      if (password !== confirmPassword) {
+        messageDiv.innerHTML = '<p class="message error">Passwords do not match.</p>';
+        return;
+      }
+      
+      // This would be an AJAX call to your backend
+      fetch('/api/webui/create-account', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          email: email,
+          name: name,
+          password: password 
+        })
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          messageDiv.innerHTML = '<p class="message success">Account created successfully!</p>';
+          // Refresh account status after a short delay
+          setTimeout(() => {
+            checkUserExists(email, name);
+          }, 2000);
+        } else {
+          messageDiv.innerHTML = `<p class="message error">Error: ${data.message}</p>`;
+        }
+      })
+      .catch(error => {
+        console.error('Error creating account:', error);
+        messageDiv.innerHTML = '<p class="message error">Error creating account. Please try again later.</p>';
+      });
+    }
+    
+    // Function to change password
+    function changePassword(email) {
+      const newPassword = document.getElementById('new-password-change').value;
+      const confirmPassword = document.getElementById('confirm-password-change').value;
+      const messageDiv = document.getElementById('change-password-message');
+      
+      // Check if passwords match
+      if (newPassword !== confirmPassword) {
+        messageDiv.innerHTML = '<p class="message error">Passwords do not match.</p>';
+        return;
+      }
+      
+      // This would be an AJAX call to your backend
+      fetch('/api/webui/change-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          email: email,
+          password: newPassword 
+        })
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          messageDiv.innerHTML = '<p class="message success">Password updated successfully!</p>';
+          // Clear the form
+          document.getElementById('change-password-form').reset();
+        } else {
+          messageDiv.innerHTML = `<p class="message error">Error: ${data.message}</p>`;
+        }
+      })
+      .catch(error => {
+        console.error('Error changing password:', error);
+        messageDiv.innerHTML = '<p class="message error">Error updating password. Please try again later.</p>';
+      });
+    }
+  </script>
 </body>
 </html>

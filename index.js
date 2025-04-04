@@ -5,6 +5,9 @@ const passport = require('passport');
 const { Strategy: SamlStrategy } = require('passport-saml');
 const path = require('path');
 
+// Import routes
+const webuiApiRoutes = require('./routes/webui-api');
+
 // Initialize Express application
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -98,6 +101,9 @@ const ensureAuthenticated = (req, res, next) => {
 // Add body parser middleware for POST requests
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
+// Use the WebUI API routes
+app.use('/api/webui', webuiApiRoutes);
 
 // Routes
 app.get('/', (req, res) => {
