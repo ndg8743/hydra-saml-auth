@@ -12,14 +12,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     sqlite3 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /app/data /app/cert \
-    && chown -R node:node /app
+    && mkdir -p /app/data /app/cert
 
 WORKDIR /app
-USER node
+USER root
 
-COPY --from=build --chown=node:node /app/node_modules /app/node_modules
-COPY --chown=node:node . .
+# Copy files
+COPY --from=build /app/node_modules /app/node_modules
+COPY . .
 
 ENV PORT=6969 \
     DB_PATH=/app/data/webui.db
