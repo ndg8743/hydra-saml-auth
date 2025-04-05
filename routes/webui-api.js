@@ -1,18 +1,32 @@
-// Create a new file named routes/webui-api.js
+// routes/webui-api.js with improved SQL sanitization
 
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
+const bcrypt = require('bcrypt');
 const { exec } = require('child_process');
 const util = require('util');
 const execPromise = util.promisify(exec);
 
-// Helper function to run SQLite commands in Docker
+// Helper function to properly escape strings for SQLite
+function sqliteEscape(str) {
+  // SQLite uses single quotes for string literals
+  // To escape a single quote in SQLite, you use two single quotes
+  return str//.replace(/'/g, "''");
+}
+
+// Helper function to run SQLite commands via the shell script
 async function runSqliteCommand(command) {
   try {
+    // Wrap the entire command in double quotes for the shell
+    // Escape any embedded double quotes
+    const escapedCommand = command.replace(/"/g, '\\"');
+    console.log("Executing SQLite command:", command);
+    
     const { stdout, stderr } = await execPromise(
-      `sudo /usr/local/bin/webui-db-query.sh "${command.replace(/"/g, '\\"')}"`
+      `sudo /usr/local/bin/webui-db-query.sh '${command}'`
     );
+    
     
     if (stderr) {
       console.error('SQLite Error:', stderr);
@@ -26,11 +40,12 @@ async function runSqliteCommand(command) {
   }
 }
 
-// Helper function to hash passwords (mimicking what OpenWebUI likely does)
-function hashPassword(password) {
-  // This is a simple hash for demonstration
-  // In production, use a proper password hashing library with salt
-  return crypto.createHash('sha256').update(password).digest('hex');
+// Async function to hash passwords properly with bcrypt
+async function hashPassword(password) {
+  const saltRounds = 12;
+  const hash = await bcrypt.hash(password, saltRounds);
+  console.log("Generated bcrypt hash:", hash);
+  return hash;
 }
 
 // Middleware to ensure user is authenticated
@@ -46,11 +61,11 @@ router.post('/check-user', ensureAuthenticated, async (req, res) => {
   try {
     const { email } = req.body;
     
-    // Escape single quotes in the email
-    const safeEmail = email.replace(/'/g, "''");
+    // Properly escape the email for SQLite
+    const safeEmail = sqliteEscape(email);
     
     // Query to check if user exists
-    const userQuery = `SELECT id, name, email, role FROM user WHERE email='${safeEmail}';`;
+    const userQuery = `SELECT id, name, email, role FROM user WHERE email="${safeEmail}";`;
     const result = await runSqliteCommand(userQuery);
     
     if (result) {
@@ -81,12 +96,12 @@ router.post('/create-account', ensureAuthenticated, async (req, res) => {
   try {
     const { email, name, password } = req.body;
     
-    // Escape single quotes
-    const safeEmail = email.replace(/'/g, "''");
-    const safeName = name.replace(/'/g, "''");
+    // Properly escape strings for SQLite
+    const safeEmail = sqliteEscape(email);
+    const safeName = sqliteEscape(name);
     
     // Check if user already exists
-    const checkUserQuery = `SELECT id FROM user WHERE email='${safeEmail}';`;
+    const checkUserQuery = `SELECT id FROM user WHERE email="${safeEmail}";`;
     const existingUser = await runSqliteCommand(checkUserQuery);
     
     if (existingUser) {
@@ -100,7 +115,8 @@ router.post('/create-account', ensureAuthenticated, async (req, res) => {
     const userId = crypto.randomUUID();
     
     // Hash the password
-    const hashedPassword = hashPassword(password);
+    const hashedPassword = await hashPassword(password);
+    const safeHashedPassword = hashedPassword.replace(/\$/g, '\\$');
     
     // Get current timestamp in seconds
     const timestamp = Math.floor(Date.now() / 1000);
@@ -110,7 +126,7 @@ router.post('/create-account', ensureAuthenticated, async (req, res) => {
       INSERT INTO user (
         id, name, email, role, profile_image_url, created_at, updated_at, last_active_at
       ) VALUES (
-        '${userId}', '${safeName}', '${safeEmail}', 'user', '', ${timestamp}, ${timestamp}, ${timestamp}
+        "${userId}", "${safeName}", "${safeEmail}", "user", "https://upload.wikimedia.org/wikipedia/en/7/73/Trollface.png", ${timestamp}, ${timestamp}, ${timestamp}
       );
     `;
     
@@ -119,7 +135,7 @@ router.post('/create-account', ensureAuthenticated, async (req, res) => {
     // Insert auth record
     const createAuthQuery = `
       INSERT INTO auth (id, email, password, active) 
-      VALUES ('${userId}', '${safeEmail}', '${hashedPassword}', 1);
+      VALUES ("${userId}", "${safeEmail}", "${safeHashedPassword}", 1);
     `;
     
     await runSqliteCommand(createAuthQuery);
@@ -142,11 +158,11 @@ router.post('/change-password', ensureAuthenticated, async (req, res) => {
   try {
     const { email, password } = req.body;
     
-    // Escape single quotes
-    const safeEmail = email.replace(/'/g, "''");
+    // Properly escape the email for SQLite
+    const safeEmail = sqliteEscape(email);
     
     // Check if user exists
-    const checkUserQuery = `SELECT id FROM user WHERE email='${safeEmail}';`;
+    const checkUserQuery = `SELECT id FROM user WHERE email="${safeEmail}";`;
     const userId = await runSqliteCommand(checkUserQuery);
     
     if (!userId) {
@@ -157,11 +173,14 @@ router.post('/change-password', ensureAuthenticated, async (req, res) => {
     }
     
     // Hash the new password
-    const hashedPassword = hashPassword(password);
+    const hashedPassword = await hashPassword(password);
+    const safeHashedPassword = hashedPassword
+    .replace(/\$/g, '\\$'); // Escape dollar signs
+    console.log("Hashed password for update:", safeHashedPassword);
     
     // Update password
     const updatePasswordQuery = `
-      UPDATE auth SET password='${hashedPassword}' WHERE email='${safeEmail}';
+      UPDATE auth SET password="${safeHashedPassword}" WHERE email="${safeEmail}";
     `;
     
     await runSqliteCommand(updatePasswordQuery);

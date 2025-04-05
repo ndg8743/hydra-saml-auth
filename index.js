@@ -10,7 +10,7 @@ const webuiApiRoutes = require('./routes/webui-api');
 
 // Initialize Express application
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 6969;
 
 // Configure views and static files
 app.set('view engine', 'ejs');
@@ -154,6 +154,6 @@ app.use((err, req, res, next) => {
 });
 
 // Start the server
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
 });
