@@ -126,7 +126,7 @@ router.post('/create-account', ensureAuthenticated, async (req, res) => {
       INSERT INTO user (
         id, name, email, role, profile_image_url, created_at, updated_at, last_active_at
       ) VALUES (
-        "${userId}", "${safeName}", "${safeEmail}", "user", "https://upload.wikimedia.org/wikipedia/en/7/73/Trollface.png", ${timestamp}, ${timestamp}, ${timestamp}
+        "${userId}", "${safeName}", "${safeEmail}", "user", "https://hydra.newpaltz.edu/SUNYCAT.png", ${timestamp}, ${timestamp}, ${timestamp}
       );
     `;
     
