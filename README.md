@@ -20,7 +20,12 @@ This service provides SAML-based authentication for Open WebUI (Ollama web inter
 - Open WebUI container running
 - Shared volume with Open WebUI for database access
 
-## Configuration
+## Management
+Rebuilding:
+```
+sudo docker compose build hydra-saml-auth
+sudo docker compose up -d hydra-saml-auth
+```
 
 ### Environment Variables
 
