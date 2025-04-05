@@ -1,52 +1,9 @@
-// routes/webui-api.js with improved SQL sanitization
-
+// routes/webui-api.js with direct SQLite access
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
-const { exec } = require('child_process');
-const util = require('util');
-const execPromise = util.promisify(exec);
-
-// Helper function to properly escape strings for SQLite
-function sqliteEscape(str) {
-  // SQLite uses single quotes for string literals
-  // To escape a single quote in SQLite, you use two single quotes
-  return str//.replace(/'/g, "''");
-}
-
-// Helper function to run SQLite commands via the shell script
-async function runSqliteCommand(command) {
-  try {
-    // Wrap the entire command in double quotes for the shell
-    // Escape any embedded double quotes
-    const escapedCommand = command.replace(/"/g, '\\"');
-    console.log("Executing SQLite command:", command);
-    
-    const { stdout, stderr } = await execPromise(
-      `sudo /usr/local/bin/webui-db-query.sh '${command}'`
-    );
-    
-    
-    if (stderr) {
-      console.error('SQLite Error:', stderr);
-      throw new Error(stderr);
-    }
-    
-    return stdout.trim();
-  } catch (error) {
-    console.error('Error executing SQLite command:', error);
-    throw error;
-  }
-}
-
-// Async function to hash passwords properly with bcrypt
-async function hashPassword(password) {
-  const saltRounds = 12;
-  const hash = await bcrypt.hash(password, saltRounds);
-  console.log("Generated bcrypt hash:", hash);
-  return hash;
-}
+const { getDb } = require('../db');
 
 // Middleware to ensure user is authenticated
 function ensureAuthenticated(req, res, next) {
@@ -56,28 +13,30 @@ function ensureAuthenticated(req, res, next) {
   res.status(401).json({ success: false, message: 'Not authenticated' });
 }
 
+// Helper function to hash passwords properly with bcrypt
+async function hashPassword(password) {
+  const saltRounds = 12;
+  const hash = await bcrypt.hash(password, saltRounds);
+  console.log("Generated bcrypt hash:", hash);
+  return hash;
+}
+
 // Check if user exists in OpenWebUI
 router.post('/check-user', ensureAuthenticated, async (req, res) => {
+  const db = await getDb();
   try {
     const { email } = req.body;
     
-    // Properly escape the email for SQLite
-    const safeEmail = sqliteEscape(email);
+    // Use prepared statements for security
+    const user = await db.get('SELECT id, name, email, role FROM user WHERE email = ?', [email]);
     
-    // Query to check if user exists
-    const userQuery = `SELECT id, name, email, role FROM user WHERE email="${safeEmail}";`;
-    const result = await runSqliteCommand(userQuery);
-    
-    if (result) {
-      // Parse the result (format: id|name|email|role)
-      const [id, name, userEmail, role] = result.split('|');
-      
+    if (user) {
       res.json({
         exists: true,
-        id,
-        username: name,
-        email: userEmail,
-        role
+        id: user.id,
+        username: user.name,
+        email: user.email,
+        role: user.role
       });
     } else {
       res.json({ exists: false });
@@ -88,23 +47,26 @@ router.post('/check-user', ensureAuthenticated, async (req, res) => {
       success: false, 
       message: 'Error checking user status' 
     });
+  } finally {
+    // Close the database connection
+    await db.close();
   }
 });
 
 // Create a new OpenWebUI account
 router.post('/create-account', ensureAuthenticated, async (req, res) => {
+  const db = await getDb();
   try {
     const { email, name, password } = req.body;
     
-    // Properly escape strings for SQLite
-    const safeEmail = sqliteEscape(email);
-    const safeName = sqliteEscape(name);
+    // Start a transaction
+    await db.run('BEGIN TRANSACTION');
     
     // Check if user already exists
-    const checkUserQuery = `SELECT id FROM user WHERE email="${safeEmail}";`;
-    const existingUser = await runSqliteCommand(checkUserQuery);
+    const existingUser = await db.get('SELECT id FROM user WHERE email = ?', [email]);
     
     if (existingUser) {
+      await db.run('ROLLBACK');
       return res.status(400).json({
         success: false,
         message: 'User with this email already exists'
@@ -116,56 +78,64 @@ router.post('/create-account', ensureAuthenticated, async (req, res) => {
     
     // Hash the password
     const hashedPassword = await hashPassword(password);
-    const safeHashedPassword = hashedPassword.replace(/\$/g, '\\$');
     
     // Get current timestamp in seconds
     const timestamp = Math.floor(Date.now() / 1000);
     
     // Insert new user
-    const createUserQuery = `
-      INSERT INTO user (
+    await db.run(
+      `INSERT INTO user (
         id, name, email, role, profile_image_url, created_at, updated_at, last_active_at
-      ) VALUES (
-        "${userId}", "${safeName}", "${safeEmail}", "user", "https://hydra.newpaltz.edu/SUNYCAT.png", ${timestamp}, ${timestamp}, ${timestamp}
-      );
-    `;
-    
-    await runSqliteCommand(createUserQuery);
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        userId, 
+        name, 
+        email, 
+        'user', 
+        'https://hydra.newpaltz.edu/SUNYCAT.png', 
+        timestamp, 
+        timestamp, 
+        timestamp
+      ]
+    );
     
     // Insert auth record
-    const createAuthQuery = `
-      INSERT INTO auth (id, email, password, active) 
-      VALUES ("${userId}", "${safeEmail}", "${safeHashedPassword}", 1);
-    `;
+    await db.run(
+      `INSERT INTO auth (id, email, password, active) VALUES (?, ?, ?, ?)`,
+      [userId, email, hashedPassword, 1]
+    );
     
-    await runSqliteCommand(createAuthQuery);
+    // Commit the transaction
+    await db.run('COMMIT');
     
     res.json({
       success: true,
       message: 'Account created successfully'
     });
   } catch (error) {
+    // Rollback on error
+    await db.run('ROLLBACK');
     console.error('Error creating account:', error);
     res.status(500).json({
       success: false,
       message: 'Error creating account'
     });
+  } finally {
+    // Close the database connection
+    await db.close();
   }
 });
 
 // Change password for an existing account
 router.post('/change-password', ensureAuthenticated, async (req, res) => {
+  const db = await getDb();
   try {
     const { email, password } = req.body;
     
-    // Properly escape the email for SQLite
-    const safeEmail = sqliteEscape(email);
-    
     // Check if user exists
-    const checkUserQuery = `SELECT id FROM user WHERE email="${safeEmail}";`;
-    const userId = await runSqliteCommand(checkUserQuery);
+    const user = await db.get('SELECT id FROM user WHERE email = ?', [email]);
     
-    if (!userId) {
+    if (!user) {
       return res.status(404).json({
         success: false,
         message: 'User not found'
@@ -174,16 +144,12 @@ router.post('/change-password', ensureAuthenticated, async (req, res) => {
     
     // Hash the new password
     const hashedPassword = await hashPassword(password);
-    const safeHashedPassword = hashedPassword
-    .replace(/\$/g, '\\$'); // Escape dollar signs
-    console.log("Hashed password for update:", safeHashedPassword);
     
     // Update password
-    const updatePasswordQuery = `
-      UPDATE auth SET password="${safeHashedPassword}" WHERE email="${safeEmail}";
-    `;
-    
-    await runSqliteCommand(updatePasswordQuery);
+    await db.run(
+      'UPDATE auth SET password = ? WHERE email = ?',
+      [hashedPassword, email]
+    );
     
     res.json({
       success: true,
@@ -195,6 +161,9 @@ router.post('/change-password', ensureAuthenticated, async (req, res) => {
       success: false,
       message: 'Error updating password'
     });
+  } finally {
+    // Close the database connection
+    await db.close();
   }
 });
 
