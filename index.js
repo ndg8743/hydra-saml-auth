@@ -286,6 +286,7 @@ function setNpCookie(res, token) {
 
 // ---------- App + middleware ----------
 app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
@@ -449,6 +450,14 @@ const ensureAuthenticated = (req, res, next) =>
       res.json({ keys: [jwk] });
     });
 
+    // Mount API routes for OpenWebUI account management
+    try {
+      const webuiApiRouter = require('./routes/webui-api');
+      app.use('/dashboard/api/webui', webuiApiRouter);
+    } catch (e) {
+      console.warn('[Init] webui-api routes not mounted:', e?.message || e);
+    }
+
     // Basic pages
     app.get('/', (req, res) => {
       res.redirect(req.isAuthenticated() ? '/dashboard' : '/login');
@@ -456,7 +465,13 @@ const ensureAuthenticated = (req, res, next) =>
 
     app.get('/dashboard', (req, res) => {
       if (!req.isAuthenticated()) return res.redirect('/login');
-      res.send(`<pre>Welcome ${req.user.display_name || req.user.email}\n\n${JSON.stringify(req.user, null, 2)}</pre>`);
+      const viewUser = {
+        firstName: req.user.given_name || '',
+        lastName: req.user.family_name || '',
+        email: req.user.email || '',
+        displayName: req.user.display_name || req.user.name || req.user.email || ''
+      };
+      res.render('dashboard', { user: viewUser });
     });
 
     app.get('/logout', (req, res, next) => {
