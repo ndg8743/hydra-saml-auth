@@ -1,4 +1,4 @@
-// openwebui-server.js — dedicated OpenWebUI DB API (separate host)
+// openwebui-api.js — dedicated OpenWebUI DB API (separate host)
 require('dotenv').config();
 
 const express = require('express');
@@ -9,7 +9,12 @@ const { getDb } = require('./db');
 const app = express();
 
 // Config
-const PORT = parseInt(process.env.OPENWEBUI_SERVER_PORT || process.env.PORT || '7070', 10);
+const PORT = parseInt(
+  process.env.OPENWEBUI_API_PORT ||
+  process.env.PORT ||
+  '7070',
+  10
+);
 const API_KEY = process.env.OPENWEBUI_API_KEY || '';
 
 // Basic hard-fail if no API key configured
