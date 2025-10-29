@@ -493,9 +493,14 @@ const ensureAuthenticated = (req, res, next) =>
     }
 
     // Mount API routes for student containers (behind auth)
+    // Use Swarm-enabled routes if USE_SWARM=true, otherwise use legacy container API
     try {
-      const containersRouter = require('./routes/containers');
+      const useSwarm = process.env.USE_SWARM === 'true';
+      const containersRouter = useSwarm
+        ? require('./routes/containers-swarm')
+        : require('./routes/containers');
       app.use('/dashboard/api/containers', ensureAuthenticated, containersRouter);
+      console.log(`[Init] Using ${useSwarm ? 'Swarm' : 'container'} mode for student workloads`);
     } catch (e) {
       console.warn('[Init] containers routes not mounted:', e?.message || e);
     }

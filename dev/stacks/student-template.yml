@@ -1,0 +1,157 @@
+# Student container template - dynamically created per student/project
+# This is a TEMPLATE - actual deployments will be created by hydra-saml-auth service
+#
+# Example deployment command:
+# docker service create \
+#   --name student-${USERNAME}-${PROJECT} \
+#   --network hydra_students \
+#   --constraint 'node.labels.workload==jupyter' \
+#   --mount type=volume,src=student-${USERNAME}-${PROJECT},dst=/home/jovyan/work \
+#   --label "traefik.enable=true" \
+#   --label "traefik.http.routers.${USERNAME}-${PROJECT}.rule=Host(\`${USERNAME}-${PROJECT}.hydra.local\`)" \
+#   jupyter/datascience-notebook:latest
+
+version: '3.8'
+
+# This file documents the service creation pattern for student containers
+# Actual services are created dynamically via Docker API
+
+services:
+  # Example: student-john-ml-project
+  student-TEMPLATE:
+    image: jupyter/datascience-notebook:latest
+    # Alternative images:
+    # - jupyter/tensorflow-notebook:latest (for ML/AI)
+    # - jupyter/scipy-notebook:latest (for scientific computing)
+    # - Custom image with pre-installed packages
+
+    environment:
+      # Jupyter configuration
+      - JUPYTER_ENABLE_LAB=yes
+      - GRANT_SUDO=yes
+      - CHOWN_HOME=yes
+      - CHOWN_HOME_OPTS=-R
+
+      # Student-specific env vars (set dynamically)
+      # - STUDENT_USERNAME=${USERNAME}
+      # - PROJECT_NAME=${PROJECT}
+      # - OPENWEBUI_API_URL=http://openwebui-middleman:7070
+
+    # Networks
+    networks:
+      - hydra_students  # Student isolation network
+
+    # Volumes (created dynamically with NFS driver)
+    volumes:
+      # NFS volume for persistent storage
+      # Volume created with:
+      # docker volume create --driver local \
+      #   --opt type=nfs \
+      #   --opt o=addr=172.30.0.5,rw,nolock \
+      #   --opt device=:/exports/student-volumes/${USERNAME}/${PROJECT} \
+      #   student-${USERNAME}-${PROJECT}
+      - student-volume:/home/jovyan/work
+
+    # Deployment configuration
+    deploy:
+      mode: replicated
+      replicas: 1
+
+      # Placement strategy
+      placement:
+        constraints:
+          # Prefer jupyter workload nodes (chimera)
+          - node.labels.workload == jupyter
+        max_replicas_per_node: 1
+
+      # Resource limits (adjust per student tier)
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+
+      # Restart policy
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+      # Update configuration
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+
+      # Traefik labels for routing
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.STUDENT_ROUTER.rule=Host(`STUDENT_HOSTNAME.hydra.local`)"
+        - "traefik.http.routers.STUDENT_ROUTER.entrypoints=web"
+        - "traefik.http.services.STUDENT_SERVICE.loadbalancer.server.port=8888"
+        - "traefik.docker.network=hydra_students"
+
+        # Middleware for auth (optional)
+        # - "traefik.http.routers.STUDENT_ROUTER.middlewares=student-auth"
+        # - "traefik.http.middlewares.student-auth.forwardauth.address=http://hydra-saml-auth:6969/verify"
+
+networks:
+  hydra_students:
+    external: true
+
+volumes:
+  student-volume:
+    # This is a placeholder - actual volumes use NFS driver
+    driver: local
+
+# ============================================================================
+# USAGE NOTES FOR HYDRA-SAML-AUTH SERVICE
+# ============================================================================
+#
+# When creating student containers dynamically, use the Docker Swarm API:
+#
+# const service = await docker.createService({
+#   Name: `student-${username}-${project}`,
+#   TaskTemplate: {
+#     ContainerSpec: {
+#       Image: 'jupyter/datascience-notebook:latest',
+#       Env: [
+#         `STUDENT_USERNAME=${username}`,
+#         `PROJECT_NAME=${project}`,
+#       ],
+#       Mounts: [{
+#         Type: 'volume',
+#         Source: `student-${username}-${project}`,
+#         Target: '/home/jovyan/work'
+#       }]
+#     },
+#     Networks: [{ Target: 'hydra_students' }],
+#     Placement: {
+#       Constraints: ['node.labels.workload==jupyter']
+#     },
+#     Resources: {
+#       Limits: { NanoCPUs: 2000000000, MemoryBytes: 4294967296 },
+#       Reservations: { NanoCPUs: 500000000, MemoryBytes: 1073741824 }
+#     }
+#   },
+#   Labels: {
+#     'traefik.enable': 'true',
+#     'traefik.http.routers.${username}-${project}.rule': `Host(\`${username}-${project}.hydra.local\`)`,
+#     'traefik.http.services.${username}-${project}.loadbalancer.server.port': '8888'
+#   }
+# });
+#
+# Before creating service, create NFS volume:
+#
+# await docker.createVolume({
+#   Name: `student-${username}-${project}`,
+#   Driver: 'local',
+#   DriverOpts: {
+#     type: 'nfs',
+#     o: 'addr=172.30.0.5,rw,nolock',
+#     device: `:/exports/student-volumes/${username}/${project}`
+#   }
+# });

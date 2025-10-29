@@ -1,0 +1,4 @@
+# NFS exports for student volumes
+# Allow access from the Docker Swarm network (172.30.0.0/16)
+/exports/student-volumes 172.30.0.0/16(rw,sync,no_subtree_check,no_root_squash,insecure,fsid=0)
+/exports/student-volumes *(rw,sync,no_subtree_check,no_root_squash,insecure,fsid=0)

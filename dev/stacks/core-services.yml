@@ -1,0 +1,233 @@
+# Core services stack - runs on hydra node (manager)
+# Deploy with: docker stack deploy -c core-services.yml core
+
+version: '3.8'
+
+services:
+  # Traefik reverse proxy - must run on manager to access Docker API
+  traefik:
+    image: traefik:v2.11
+    command:
+      - --api.dashboard=true
+      - --api.insecure=true
+      # Enable Swarm mode
+      - --providers.docker=true
+      - --providers.docker.swarmMode=true
+      - --providers.docker.exposedbydefault=false
+      # Don't restrict to a single network - allow discovery on all networks
+      # Services can specify their network with traefik.docker.network label
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --log.level=INFO
+    ports:
+      - target: 80
+        published: 80
+        mode: host
+      - target: 443
+        published: 443
+        mode: host
+      - target: 8080
+        published: 8081
+        mode: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - hydra_public
+      - hydra_students
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.traefik-dashboard.rule=Host(`traefik.hydra.local`)"
+        - "traefik.http.routers.traefik-dashboard.service=api@internal"
+        - "traefik.http.routers.traefik-dashboard.entrypoints=web"
+        - "traefik.http.services.traefik-dashboard.loadbalancer.server.port=8080"
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+
+  # Mock SAML IdP for development
+  mock-saml-idp:
+    image: kristophjunge/test-saml-idp
+    environment:
+      SIMPLESAMLPHP_SP_ENTITY_ID: hydra.local
+      SIMPLESAMLPHP_SP_ASSERTION_CONSUMER_SERVICE: http://hydra.local/login/callback
+      SIMPLESAMLPHP_BASEURLPATH: http://mock-saml-idp/simplesaml/
+    ports:
+      - target: 8080
+        published: 8080
+        mode: host
+    networks:
+      - hydra_public
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.role == manager
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.idp.rule=Host(`mock-saml-idp`)"
+        - "traefik.http.routers.idp.entrypoints=web"
+        - "traefik.http.services.idp.loadbalancer.server.port=8080"
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+
+  # OpenWebUI Middleman (Database API) - runs on hydra
+  openwebui-middleman:
+    image: hydra-openwebui-middleman:latest
+    environment:
+      - OPENWEBUI_API_PORT=7070
+      - OPENWEBUI_API_KEY=dev-api-key-change-me
+      - DB_PATH=/app/data/webui.db
+    ports:
+      - target: 7070
+        published: 7070
+        mode: host
+    volumes:
+      - openwebui-data:/app/data:rw
+    networks:
+      - hydra_public
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+
+  # Main Hydra SAML Auth service - runs on hydra (needs Docker socket)
+  hydra-saml-auth:
+    image: hydra-saml-auth:latest
+    environment:
+      # Core settings
+      - BASE_URL=http://hydra.local
+      - PORT=6969
+      - NODE_ENV=development
+      - SESSION_SECRET=dev-session-secret-change-me-in-prod
+
+      # SAML settings
+      - METADATA_URL=http://mock-saml-idp:8080/simplesaml/saml2/idp/metadata.php
+      - SAML_SP_ENTITY_ID=hydra.local
+      - SAML_CALLBACK_PATH=/login/callback
+      - CALLBACK_URL=http://hydra.local/login/callback
+
+      # Cookie & JWT settings
+      - COOKIE_DOMAIN=.hydra.local
+      - JWT_TTL_SECONDS=900
+      - JWT_AUDIENCE=npsites-dev
+      - JWT_KEY_ID=hydra-key-dev-1
+      - JWT_PRIVATE_KEY_FILE=/app/jwt-keys/private.pem
+      - JWT_PUBLIC_KEY_FILE=/app/jwt-keys/public.pem
+
+      # OpenWebUI API settings
+      - OPENWEBUI_API_BASE=http://openwebui-middleman:7070/openwebui/api
+      - OPENWEBUI_API_KEY=dev-api-key-change-me
+
+      # n8n settings
+      - N8N_HOST=http://n8n:5678
+      - N8N_API_KEY=dev-n8n-api-key
+      - N8N_USER_MANAGER_API_KEY=dev-n8n-user-manager-key
+
+      # Student containers settings
+      - PUBLIC_STUDENTS_BASE=http://hydra.local/students
+      - JUPYTER_IMAGE=jupyter/tensorflow-notebook:latest
+
+      # Container management
+      - DOCKER_SOCKET=/var/run/docker.sock
+      - STUDENT_NETWORK=core_hydra_students
+      - USE_SWARM=true
+
+      # NFS settings for student volumes
+      - NFS_SERVER_IP=172.30.0.5
+    ports:
+      - target: 6969
+        published: 6969
+        mode: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - jwt-keys:/app/jwt-keys
+    networks:
+      - hydra_public
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.hydra.rule=Host(`hydra.local`)"
+        - "traefik.http.routers.hydra.entrypoints=web"
+        - "traefik.http.services.hydra.loadbalancer.server.port=6969"
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+
+  # n8n workflow automation
+  n8n:
+    image: n8nio/n8n:latest
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=admin
+      - N8N_HOST=n8n.hydra.local
+      - N8N_PORT=5678
+      - N8N_WEBHOOK_BASE_URL=http://n8n.hydra.local
+      - N8N_SECURE_COOKIE=false
+    volumes:
+      - n8n-data:/home/node/.n8n
+    networks:
+      - hydra_public
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.role == manager
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.n8n.rule=Host(`n8n.hydra.local`)"
+        - "traefik.http.routers.n8n.entrypoints=web"
+        - "traefik.http.services.n8n.loadbalancer.server.port=5678"
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+
+networks:
+  hydra_public:
+    driver: overlay
+    attachable: true
+
+  hydra_students:
+    driver: overlay
+    attachable: true
+    internal: false  # Students need internet access
+
+volumes:
+  openwebui-data:
+    driver: local
+  jwt-keys:
+    driver: local
+  n8n-data:
+    driver: local

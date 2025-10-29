@@ -1,0 +1,204 @@
+version: '3.8'
+
+# Docker-in-Docker setup to simulate a 3-node Swarm cluster
+# This allows testing multi-node behavior on a single machine
+
+services:
+  # Hydra node - Swarm manager + NFS server
+  hydra-node:
+    image: docker:24-dind
+    container_name: hydra-node
+    hostname: hydra-node
+    privileged: true
+    environment:
+      - DOCKER_TLS_CERTDIR=/certs
+    volumes:
+      - hydra-docker-certs-ca:/certs/ca
+      - hydra-docker-certs-client:/certs/client
+      - hydra-docker-data:/var/lib/docker
+      - nfs-data:/mnt/nfs/student-volumes
+      # Mount host Docker socket for easier management (optional)
+      - /var/run/docker.sock:/var/run/host-docker.sock:ro
+    ports:
+      # Swarm management ports
+      - "2377:2377"   # Swarm management
+      - "2376:2376"   # Docker daemon TLS
+      - "7946:7946"   # Container network discovery (TCP)
+      - "7946:7946/udp" # Container network discovery (UDP)
+      - "4789:4789/udp" # Overlay network traffic
+
+      # Application ports (forwarded from services running in swarm)
+      - "80:80"       # Traefik HTTP
+      - "443:443"     # Traefik HTTPS
+      - "8081:8081"   # Traefik dashboard
+      - "6969:6969"   # Hydra SAML Auth
+      - "8080:8080"   # Mock SAML IdP
+      - "11434:11434" # Ollama
+      - "7070:7070"   # OpenWebUI Middleman
+    networks:
+      swarm-net:
+        ipv4_address: 172.30.0.10
+    command: >
+      sh -c "
+        # Start Docker daemon
+        dockerd-entrypoint.sh &
+        DOCKER_PID=$$!
+
+        # Wait for Docker to be ready
+        echo 'Waiting for Docker daemon to start...'
+        for i in $$(seq 1 30); do
+          docker info >/dev/null 2>&1 && break
+          sleep 1
+        done
+
+        echo 'Hydra node (manager) is ready'
+        echo 'Run: docker exec hydra-node docker swarm init --advertise-addr 172.30.0.10'
+
+        # Keep container running
+        wait $$DOCKER_PID
+      "
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Chimera node - Worker with GPU labels (for Jupyter)
+  chimera-node:
+    image: docker:24-dind
+    container_name: chimera-node
+    hostname: chimera-node
+    privileged: true
+    runtime: nvidia
+    environment:
+      - DOCKER_TLS_CERTDIR=/certs
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    volumes:
+      - chimera-docker-certs-ca:/certs/ca
+      - chimera-docker-certs-client:/certs/client
+      - chimera-docker-data:/var/lib/docker
+    networks:
+      swarm-net:
+        ipv4_address: 172.30.0.20
+    command: >
+      sh -c "
+        # Start Docker daemon
+        dockerd-entrypoint.sh &
+        DOCKER_PID=$$!
+
+        # Wait for Docker to be ready
+        echo 'Waiting for Docker daemon to start...'
+        for i in $$(seq 1 30); do
+          docker info >/dev/null 2>&1 && break
+          sleep 1
+        done
+
+        echo 'Chimera node (worker) is ready'
+        echo 'Waiting for swarm join command from hydra-node...'
+
+        # Keep container running
+        wait $$DOCKER_PID
+      "
+    depends_on:
+      hydra-node:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Cerberus node - Worker with GPU labels (for Ollama)
+  cerberus-node:
+    image: docker:24-dind
+    container_name: cerberus-node
+    hostname: cerberus-node
+    privileged: true
+    runtime: nvidia
+    environment:
+      - DOCKER_TLS_CERTDIR=/certs
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    volumes:
+      - cerberus-docker-certs-ca:/certs/ca
+      - cerberus-docker-certs-client:/certs/client
+      - cerberus-docker-data:/var/lib/docker
+    networks:
+      swarm-net:
+        ipv4_address: 172.30.0.30
+    command: >
+      sh -c "
+        # Start Docker daemon
+        dockerd-entrypoint.sh &
+        DOCKER_PID=$$!
+
+        # Wait for Docker to be ready
+        echo 'Waiting for Docker daemon to start...'
+        for i in $$(seq 1 30); do
+          docker info >/dev/null 2>&1 && break
+          sleep 1
+        done
+
+        echo 'Cerberus node (worker) is ready'
+        echo 'Waiting for swarm join command from hydra-node...'
+
+        # Keep container running
+        wait $$DOCKER_PID
+      "
+    depends_on:
+      hydra-node:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # NFS server running on hydra node
+  nfs-server:
+    build:
+      context: ../nfs
+      dockerfile: Dockerfile
+    container_name: nfs-server
+    privileged: true
+    volumes:
+      - nfs-data:/exports/student-volumes
+    ports:
+      - "2049:2049"
+    networks:
+      swarm-net:
+        ipv4_address: 172.30.0.5
+    environment:
+      - SHARED_DIRECTORY=/exports/student-volumes
+    depends_on:
+      - hydra-node
+
+volumes:
+  # Hydra node volumes
+  hydra-docker-certs-ca:
+  hydra-docker-certs-client:
+  hydra-docker-data:
+
+  # Chimera node volumes
+  chimera-docker-certs-ca:
+  chimera-docker-certs-client:
+  chimera-docker-data:
+
+  # Cerberus node volumes
+  cerberus-docker-certs-ca:
+  cerberus-docker-certs-client:
+  cerberus-docker-data:
+
+  # Shared NFS storage
+  nfs-data:
+    driver: local
+
+networks:
+  swarm-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16
+    labels:
+      - "com.hydra.swarm=dev"

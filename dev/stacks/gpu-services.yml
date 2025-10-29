@@ -1,0 +1,88 @@
+# GPU services stack - runs on GPU-enabled worker nodes (chimera/cerberus)
+# Deploy with: docker stack deploy -c gpu-services.yml gpu
+
+version: '3.8'
+
+services:
+  # Ollama - AI model runtime (prefers cerberus node)
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama-data:/root/.ollama
+    ports:
+      - target: 11434
+        published: 11434
+        mode: host
+    networks:
+      - hydra_public
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.gpu == true
+        preferences:
+          # Prefer cerberus for ollama workload
+          - spread: node.labels.workload
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+      # Uncomment for production with actual GPU
+      # resources:
+      #   reservations:
+      #     devices:
+      #       - driver: nvidia
+      #         count: 1
+      #         capabilities: [gpu]
+
+  # Open WebUI - AI chat interface (runs alongside ollama)
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    volumes:
+      - openwebui-data:/app/backend/data
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WEBUI_SECRET_KEY=dev-secret-key-change-me
+    networks:
+      - hydra_public
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.gpu == true
+        preferences:
+          # Run on same node as ollama if possible
+          - spread: node.labels.workload
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.gpt.rule=Host(`gpt.hydra.local`)"
+        - "traefik.http.routers.gpt.entrypoints=web"
+        - "traefik.http.services.gpt.loadbalancer.server.port=8080"
+        - "traefik.docker.network=hydra_public"
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+
+networks:
+  hydra_public:
+    name: core_hydra_public
+    external: true
+
+volumes:
+  ollama-data:
+    driver: local
+  openwebui-data:
+    driver: local
+    # This volume is shared with core services for middleman access
+    # In production, this would use NFS or another shared storage solution
