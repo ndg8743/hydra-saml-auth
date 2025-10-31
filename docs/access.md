@@ -1399,61 +1399,12 @@ Use the cURL example from Method 3 above to send a test message and verify you r
 
 ---
 
-## Troubleshooting
-
-### Common Issues and Solutions
-
-#### 1. **401 Unauthorized Error**
-
-- **Cause:** Invalid or expired API key
-- **Solution:**
-    - Verify your API key is correct
-    - Generate a new API key if needed
-    - Ensure no extra spaces or characters in the key
-
-#### 2. **Connection Timeout**
-
-- **Cause:** Not connected to SUNY New Paltz network
-- **Solution:**
-    - Connect to campus VPN if off-campus
-    - Verify you can access https://gpt.hydra.newpaltz.edu in your browser
-
-#### 3. **Model Not Found Error**
-
-- **Cause:** Specified model doesn't exist or isn't available
-- **Solution:**
-    - Use the "List Available Models" command above
-    - Verify `gemma3:12b` is in the list
-    - Check for typos in the model name
-
-#### 4. **SSL Certificate Errors**
-
-- **Cause:** Certificate verification issues
-- **Solution:**
-    - Ensure your system's CA certificates are up to date
-    - If using Python, you may need to install `certifi`
-
-#### 5. **Rate Limiting**
-
-- **Cause:** Too many requests in a short time
-- **Solution:**
-    - Implement exponential backoff in your code
-    - Contact Hydra Lab administrators for rate limit details
-
-#### 6. **CORS Errors (Browser)**
-
-- **Cause:** Cross-Origin Resource Sharing restrictions
-- **Solution:**
-    - Make API calls from your backend server instead of frontend
-    - Use a proxy server for development
-    - Contact administrators if CORS needs to be configured
-
 ### Getting Help
 
 If you continue to experience issues:
 
 1. **Check Hydra Lab Status:**
-    - Visit the Hydra Lab website or contact the administrators
+    - Visit the Hydra Lab website or contact the admins
 2. **Documentation:**
     - Refer to the Open WebUI documentation: https://docs.openwebui.com
     - Check for updates to the integration process
@@ -1601,15 +1552,6 @@ class ChatBot {
     console.log(await bot.chat('Thanks for the explanation!'));
 })();
 ```
-
----
-
-## Changelog
-
-- **v1.1** - Added comprehensive language examples (Python, JavaScript, PHP, Java, C#, Ruby, Go, Rust)
-- **v1.0** - Initial guide created with Hydra GPT integration instructions
-- Endpoint: `https://gpt.hydra.newpaltz.edu/api/chat/completions`
-- Default Model: `gemma3:12b`
 
 ---
 
