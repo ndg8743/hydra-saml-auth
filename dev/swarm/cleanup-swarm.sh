@@ -77,8 +77,12 @@ stop_nodes() {
 
     cd "$(dirname "$0")"
     if [ -f "docker-compose.nodes.yml" ]; then
-        docker compose -f docker-compose.nodes.yml down
-        echo -e "${GREEN}  ✓ DinD nodes stopped${NC}"
+        if docker compose -f docker-compose.nodes.yml down; then
+            echo -e "${GREEN}  ✓ DinD nodes stopped${NC}"
+        else
+            echo -e "${RED}Error: Failed to stop DinD nodes${NC}"
+            return 1
+        fi
     else
         echo -e "${RED}Error: docker-compose.nodes.yml not found${NC}"
         return 1
@@ -95,8 +99,11 @@ Do you want to remove all volumes? This will delete all data.${NC}"
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         echo -e "${GREEN}Removing volumes...${NC}"
         cd "$(dirname "$0")"
-        docker compose -f docker-compose.nodes.yml down -v
-        echo -e "${GREEN}  ✓ Volumes removed${NC}"
+        if docker compose -f docker-compose.nodes.yml down -v; then
+            echo -e "${GREEN}  ✓ Volumes removed${NC}"
+        else
+            echo -e "${RED}Warning: Some volumes may not have been removed${NC}"
+        fi
     else
         echo -e "${YELLOW}  Volumes preserved${NC}"
     fi

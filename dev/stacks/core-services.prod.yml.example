@@ -1,0 +1,361 @@
+# Core services stack - PRODUCTION EXAMPLE
+#
+# ⚠️  This is a production configuration example ⚠️
+#
+# Before using in production:
+# 1. Replace all placeholder values with real credentials
+# 2. Configure SSL/TLS certificates for HTTPS
+# 3. Set up proper authentication for Traefik dashboard
+# 4. Use Azure AD instead of mock SAML IdP
+# 5. Configure proper security headers
+# 6. Set up monitoring and logging
+# 7. Review and harden all security settings
+# 8. Test thoroughly in staging environment first
+#
+# Deploy with: docker stack deploy -c core-services.prod.yml core
+
+version: '3.8'
+
+services:
+  # Traefik reverse proxy - Production configuration
+  traefik:
+    image: traefik:v2.11
+    command:
+      # API Configuration - Secure dashboard
+      - --api.dashboard=true
+      - --api.insecure=false  # CHANGED: Disable insecure API
+
+      # Docker Provider
+      - --providers.docker=true
+      - --providers.docker.swarmMode=true
+      - --providers.docker.exposedbydefault=false
+
+      # Entrypoints
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+
+      # SSL/TLS Configuration - REQUIRED FOR PRODUCTION
+      - --certificatesresolvers.letsencrypt.acme.email=your-email@example.com  # CHANGE ME
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge=true
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
+
+      # Redirect HTTP to HTTPS
+      - --entrypoints.web.http.redirections.entryPoint.to=websecure
+      - --entrypoints.web.http.redirections.entryPoint.scheme=https
+
+      # Security headers
+      - --entrypoints.websecure.http.middlewares=security-headers@file
+
+      # Logging
+      - --log.level=INFO
+      - --accesslog=true
+      - --accesslog.filepath=/var/log/traefik/access.log
+
+    ports:
+      - target: 80
+        published: 80
+        mode: host
+      - target: 443
+        published: 443
+        mode: host
+      # Dashboard on separate port with authentication
+      - target: 8080
+        published: 8081
+        mode: host
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-certificates:/letsencrypt
+      - traefik-logs:/var/log/traefik
+      # Mount config file for security headers and middlewares
+      - /path/to/traefik-config:/etc/traefik:ro  # CHANGE ME
+
+    networks:
+      - hydra_public
+      - hydra_students
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - "traefik.enable=true"
+
+        # Dashboard with authentication
+        - "traefik.http.routers.traefik-dashboard.rule=Host(`traefik.yourdomain.com`)"  # CHANGE ME
+        - "traefik.http.routers.traefik-dashboard.service=api@internal"
+        - "traefik.http.routers.traefik-dashboard.entrypoints=websecure"
+        - "traefik.http.routers.traefik-dashboard.tls=true"
+        - "traefik.http.routers.traefik-dashboard.tls.certresolver=letsencrypt"
+
+        # Basic auth for dashboard (generate with: htpasswd -nb admin password)
+        - "traefik.http.routers.traefik-dashboard.middlewares=dashboard-auth"
+        - "traefik.http.middlewares.dashboard-auth.basicauth.users=admin:$$apr1$$CHANGEME$$CHANGEME"  # CHANGE ME
+
+        - "traefik.http.services.traefik-dashboard.loadbalancer.server.port=8080"
+
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+  # Hydra SAML Auth - Production configuration
+  hydra-saml-auth:
+    image: hydra-saml-auth:latest
+    environment:
+      # Base configuration
+      - BASE_URL=https://auth.yourdomain.com  # CHANGE ME
+      - PORT=6969
+      - NODE_ENV=production
+
+      # Session secret - GENERATE A STRONG RANDOM VALUE
+      - SESSION_SECRET=GENERATE-A-STRONG-RANDOM-SECRET-HERE  # CHANGE ME
+
+      # Azure AD SAML Configuration - PRODUCTION
+      - METADATA_URL=https://login.microsoftonline.com/YOUR-TENANT-ID/federationmetadata/2007-06/federationmetadata.xml  # CHANGE ME
+      - SAML_SP_ENTITY_ID=https://auth.yourdomain.com  # CHANGE ME
+      - SAML_CALLBACK_PATH=/login/callback
+      - CALLBACK_URL=https://auth.yourdomain.com/login/callback  # CHANGE ME
+
+      # Cookie & JWT settings
+      - COOKIE_DOMAIN=.yourdomain.com  # CHANGE ME
+      - JWT_TTL_SECONDS=900
+      - JWT_AUDIENCE=your-production-audience  # CHANGE ME
+      - JWT_KEY_ID=hydra-key-prod-1
+
+      # JWT keys - Mount from secure location
+      - JWT_PRIVATE_KEY_FILE=/run/secrets/jwt_private_key
+      - JWT_PUBLIC_KEY_FILE=/run/secrets/jwt_public_key
+
+      # OpenWebUI API settings
+      - OPENWEBUI_API_BASE=http://openwebui-middleman:7070/openwebui/api
+      - OPENWEBUI_API_KEY=GENERATE-STRONG-API-KEY-HERE  # CHANGE ME
+
+      # n8n settings
+      - N8N_HOST=http://n8n:5678
+      - N8N_API_KEY=GENERATE-STRONG-N8N-API-KEY-HERE  # CHANGE ME
+      - N8N_USER_MANAGER_API_KEY=GENERATE-STRONG-N8N-USER-MANAGER-KEY-HERE  # CHANGE ME
+
+      # Student containers
+      - PUBLIC_STUDENTS_BASE=https://students.yourdomain.com  # CHANGE ME
+      - JUPYTER_IMAGE=jupyter/minimal-notebook:latest
+
+      # Database
+      - DB_PATH=/app/data/webui.db
+
+    secrets:
+      - jwt_private_key
+      - jwt_public_key
+
+    volumes:
+      - hydra-data:/app/data:rw
+      - hydra-logs:/app/logs:rw
+
+    networks:
+      - hydra_public
+
+    deploy:
+      mode: replicated
+      replicas: 2  # Multiple replicas for HA
+      placement:
+        constraints:
+          - node.labels.role == manager
+      labels:
+        - "traefik.enable=true"
+
+        # HTTP router (redirects to HTTPS)
+        - "traefik.http.routers.hydra-http.rule=Host(`auth.yourdomain.com`)"  # CHANGE ME
+        - "traefik.http.routers.hydra-http.entrypoints=web"
+
+        # HTTPS router
+        - "traefik.http.routers.hydra.rule=Host(`auth.yourdomain.com`)"  # CHANGE ME
+        - "traefik.http.routers.hydra.entrypoints=websecure"
+        - "traefik.http.routers.hydra.tls=true"
+        - "traefik.http.routers.hydra.tls.certresolver=letsencrypt"
+
+        # Security headers middleware
+        - "traefik.http.routers.hydra.middlewares=security-headers"
+
+        - "traefik.http.services.hydra.loadbalancer.server.port=6969"
+        - "traefik.docker.network=hydra_public"
+
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        order: start-first  # Zero-downtime updates
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+
+  # OpenWebUI Middleman - Production configuration
+  openwebui-middleman:
+    image: hydra-openwebui-middleman:latest
+    environment:
+      - OPENWEBUI_API_PORT=7070
+      - OPENWEBUI_API_KEY=GENERATE-STRONG-API-KEY-HERE  # CHANGE ME (same as above)
+      - DB_PATH=/app/data/webui.db
+      - NODE_ENV=production
+
+    volumes:
+      - openwebui-data:/app/data:rw
+
+    networks:
+      - hydra_public
+
+    deploy:
+      mode: replicated
+      replicas: 2  # Multiple replicas for HA
+      placement:
+        constraints:
+          - node.labels.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        order: start-first
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # n8n workflow automation - Production configuration
+  n8n:
+    image: n8nio/n8n:latest
+    environment:
+      - N8N_HOST=n8n.yourdomain.com  # CHANGE ME
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=https
+      - NODE_ENV=production
+      - WEBHOOK_URL=https://n8n.yourdomain.com/  # CHANGE ME
+
+      # Authentication - REQUIRED FOR PRODUCTION
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin  # CHANGE ME
+      - N8N_BASIC_AUTH_PASSWORD=GENERATE-STRONG-PASSWORD-HERE  # CHANGE ME
+
+      # Database - Consider using PostgreSQL for production
+      - DB_TYPE=sqlite
+      - DB_SQLITE_DATABASE=/home/node/.n8n/database.sqlite
+
+    volumes:
+      - n8n-data:/home/node/.n8n:rw
+
+    networks:
+      - hydra_public
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.role == manager
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.n8n.rule=Host(`n8n.yourdomain.com`)"  # CHANGE ME
+        - "traefik.http.routers.n8n.entrypoints=websecure"
+        - "traefik.http.routers.n8n.tls=true"
+        - "traefik.http.routers.n8n.tls.certresolver=letsencrypt"
+        - "traefik.http.services.n8n.loadbalancer.server.port=5678"
+        - "traefik.docker.network=hydra_public"
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+# Docker secrets for sensitive data
+secrets:
+  jwt_private_key:
+    external: true
+  jwt_public_key:
+    external: true
+
+# Persistent volumes
+volumes:
+  traefik-certificates:
+    driver: local
+  traefik-logs:
+    driver: local
+  hydra-data:
+    driver: local
+  hydra-logs:
+    driver: local
+  openwebui-data:
+    driver: local
+  n8n-data:
+    driver: local
+
+# Networks
+networks:
+  hydra_public:
+    driver: overlay
+    attachable: true
+    labels:
+      - "com.hydra.network=public"
+  hydra_students:
+    driver: overlay
+    attachable: true
+    internal: false  # Students need internet access
+    labels:
+      - "com.hydra.network=students"
+
+# Production Deployment Checklist:
+#
+# [ ] Replace all CHANGE ME values
+# [ ] Generate strong random secrets for:
+#     - SESSION_SECRET
+#     - OPENWEBUI_API_KEY
+#     - N8N_API_KEY
+#     - N8N_USER_MANAGER_API_KEY
+#     - N8N_BASIC_AUTH_PASSWORD
+#     - Traefik dashboard password
+# [ ] Create Docker secrets for JWT keys:
+#     docker secret create jwt_private_key /path/to/private.pem
+#     docker secret create jwt_public_key /path/to/public.pem
+# [ ] Configure Azure AD SAML integration
+# [ ] Set up SSL/TLS certificates (Let's Encrypt or custom)
+# [ ] Configure security headers in Traefik config file
+# [ ] Set up monitoring (Prometheus, Grafana, etc.)
+# [ ] Configure log aggregation (ELK, Loki, etc.)
+# [ ] Set up backup procedures for volumes
+# [ ] Configure firewall rules
+# [ ] Review and adjust resource limits
+# [ ] Test in staging environment
+# [ ] Create incident response plan
+# [ ] Document deployment procedures

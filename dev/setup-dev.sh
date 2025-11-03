@@ -14,8 +14,29 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Check if running as root (needed for hosts file)
+# Detect OS platform
+detect_platform() {
+    case "$(uname -s)" in
+        Linux*)     PLATFORM=Linux;;
+        Darwin*)    PLATFORM=Mac;;
+        MINGW*|MSYS*|CYGWIN*)     PLATFORM=Windows;;
+        *)          PLATFORM=Unknown;;
+    esac
+    echo -e "${GREEN}Detected platform: $PLATFORM${NC}"
+}
+
+# Check if running as root (needed for hosts file on Linux/Mac)
 check_sudo() {
+    if [ "$PLATFORM" = "Windows" ]; then
+        echo -e "${YELLOW}Windows detected: Please run setup-hosts-windows.bat as Administrator separately${NC}"
+        echo -e "${YELLOW}Or manually add these entries to C:\\Windows\\System32\\drivers\\etc\\hosts:${NC}"
+        echo -e "${YELLOW}  127.0.0.1 hydra.local${NC}"
+        echo -e "${YELLOW}  127.0.0.1 gpt.hydra.local${NC}"
+        echo -e "${YELLOW}  127.0.0.1 n8n.hydra.local${NC}"
+        echo -e "${YELLOW}  127.0.0.1 traefik.hydra.local${NC}"
+        return 0
+    fi
+
     if [ "$EUID" -ne 0 ]; then
         echo -e "${YELLOW}This script needs sudo access to update /etc/hosts${NC}"
         exec sudo "$0" "$@"
@@ -24,16 +45,24 @@ check_sudo() {
 
 # Add local domains to hosts file
 setup_hosts() {
+    if [ "$PLATFORM" = "Windows" ]; then
+        echo -e "${YELLOW}Skipping hosts file update on Windows${NC}"
+        echo -e "${YELLOW}Please see instructions above or run setup-hosts-windows.bat as Administrator${NC}"
+        return 0
+    fi
+
     echo -e "${GREEN}Setting up local domains...${NC}"
-    
+
+    HOSTS_FILE="/etc/hosts"
+
     # Check if entries already exist
-    if ! grep -q "hydra.local" /etc/hosts; then
-        echo "# Hydra SAML Auth Development" >> /etc/hosts
-        echo "127.0.0.1 hydra.local" >> /etc/hosts
-        echo "127.0.0.1 gpt.hydra.local" >> /etc/hosts
-        echo "127.0.0.1 n8n.hydra.local" >> /etc/hosts
-        echo "127.0.0.1 traefik.hydra.local" >> /etc/hosts
-        echo -e "${GREEN}✓ Added local domains to /etc/hosts${NC}"
+    if ! grep -q "hydra.local" "$HOSTS_FILE"; then
+        echo "# Hydra SAML Auth Development" >> "$HOSTS_FILE"
+        echo "127.0.0.1 hydra.local" >> "$HOSTS_FILE"
+        echo "127.0.0.1 gpt.hydra.local" >> "$HOSTS_FILE"
+        echo "127.0.0.1 n8n.hydra.local" >> "$HOSTS_FILE"
+        echo "127.0.0.1 traefik.hydra.local" >> "$HOSTS_FILE"
+        echo -e "${GREEN}✓ Added local domains to $HOSTS_FILE${NC}"
     else
         echo -e "${YELLOW}Local domains already configured${NC}"
     fi
@@ -116,7 +145,10 @@ main() {
 ║   Hydra SAML Auth - Development Setup   ║
 ╚══════════════════════════════════════════╝
 ${NC}"
-    
+
+    # Detect platform first
+    detect_platform
+
     # Check if we need sudo for hosts file
     if [[ "$1" != "--skip-hosts" ]]; then
         check_sudo

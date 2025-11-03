@@ -2,6 +2,16 @@
 
 This development setup provides a complete local environment that emulates the production Hydra SAML Auth system, including all dependencies and services.
 
+## 📋 Important Documents
+
+- **[STATUS.md](STATUS.md)** - Feature completion status and production readiness assessment
+- **[SWARM.md](SWARM.md)** - Docker Swarm multi-node setup (experimental)
+- **Production Config Examples:**
+  - [stacks/core-services.prod.yml.example](stacks/core-services.prod.yml.example)
+  - [nfs/exports.prod.example](nfs/exports.prod.example)
+
+> **Note:** The single-node development environment documented below is production-ready and can be integrated into the main project. The Docker Swarm components are experimental and require additional application code changes before integration. See [STATUS.md](STATUS.md) for details.
+
 ## Architecture Overview
 
 ```
@@ -35,13 +45,23 @@ This development setup provides a complete local environment that emulates the p
 - sudo access (for hosts file modification)
 
 ### For Windows Users
+
+**Option 1: Run the automated script as Administrator**
+```cmd
+cd dev
+setup-hosts-windows.bat
+```
+
+**Option 2: Manual setup**
 Add the following entries to your `C:\Windows\System32\drivers\etc\hosts` file:
-```bash
+```
 127.0.0.1    hydra.local
 127.0.0.1    gpt.hydra.local
 127.0.0.1    n8n.hydra.local
-127.0.0.1    mock-saml-idp
+127.0.0.1    traefik.hydra.local
 ```
+
+> **Note:** The setup-dev.sh script will automatically detect Windows and skip hosts file modification with instructions.
 
 ### Setup Steps
 
@@ -70,6 +90,24 @@ docker compose -f docker-compose.dev.yml up -d
 - Mock SAML IdP: http://localhost:8080
 - Traefik Dashboard: http://localhost:8081
 - n8n: http://localhost:5678
+
+## ⚠️ Security Warning
+
+**The development environment uses INSECURE credentials and configurations that are suitable ONLY for local development.**
+
+- All API keys and secrets in `.env.dev` are hardcoded and insecure
+- The NFS server uses permissive access controls
+- No SSL/TLS encryption is configured
+- The mock SAML IdP is for testing only
+
+**NEVER use these configurations or credentials in production!**
+
+For production deployment:
+- See [stacks/core-services.prod.yml.example](stacks/core-services.prod.yml.example) for production configuration
+- Generate strong random secrets for all API keys and passwords
+- Configure proper Azure AD SAML integration
+- Enable SSL/TLS with valid certificates
+- Review [nfs/exports.prod.example](nfs/exports.prod.example) for secure NFS configuration
 
 ## 🔐 Authentication (Mock SAML)
 

@@ -1,0 +1,149 @@
+# NFS exports - PRODUCTION EXAMPLE
+#
+# ⚠️  This is a production configuration example ⚠️
+#
+# IMPORTANT: Review and customize for your security requirements before deployment.
+#
+# Security Best Practices:
+# 1. Limit access to specific IP ranges or subnets
+# 2. Use root_squash to prevent root privilege escalation
+# 3. Use all_squash with specific UID/GID for better isolation
+# 4. Remove 'insecure' option (require privileged ports)
+# 5. Consider using Kerberos authentication (sec=krb5)
+# 6. Configure firewall rules to restrict NFS ports
+# 7. Use NFSv4 for better security and performance
+# 8. Enable access logging and monitoring
+#
+#########################################
+
+# Production Example 1: Restricted to specific subnet with user squashing
+# Use this for Docker Swarm overlay network
+# Replace 10.0.0.0/24 with your actual Swarm overlay network subnet
+/exports/student-volumes 10.0.0.0/24(rw,sync,no_subtree_check,root_squash,all_squash,anonuid=1000,anongid=1000,fsid=0)
+
+# Production Example 2: Multiple subnets with different permissions
+# Management network (read-write)
+# /exports/student-volumes 10.0.1.0/24(rw,sync,no_subtree_check,root_squash,all_squash,anonuid=1000,anongid=1000,fsid=0)
+# Backup network (read-only)
+# /exports/student-volumes 10.0.2.0/24(ro,sync,no_subtree_check,root_squash,all_squash,anonuid=1000,anongid=1000,fsid=0)
+
+# Production Example 3: With Kerberos security (most secure)
+# Requires Kerberos infrastructure
+# /exports/student-volumes 10.0.0.0/24(rw,sync,no_subtree_check,sec=krb5p,fsid=0)
+
+# Production Example 4: NFSv4 only with stricter security
+# /exports/student-volumes 10.0.0.0/24(rw,sync,no_subtree_check,root_squash,all_squash,anonuid=1000,anongid=1000,fsid=0,sec=sys)
+
+#########################################
+# Option Explanations:
+#########################################
+#
+# rw                - Read-write access (use 'ro' for read-only)
+# sync              - Write changes to disk before responding (safer but slower)
+# no_subtree_check  - Disable subtree checking (required for reliability)
+# root_squash       - Map root user to anonymous user (SECURITY)
+# all_squash        - Map all users to anonymous user (SECURITY)
+# anonuid=1000      - UID for anonymous user (should match container user)
+# anongid=1000      - GID for anonymous user (should match container user)
+# fsid=0            - Filesystem identifier (required for NFSv4)
+# sec=sys           - Default security (Unix UID/GID)
+# sec=krb5          - Kerberos authentication
+# sec=krb5i         - Kerberos with integrity checking
+# sec=krb5p         - Kerberos with privacy (encryption)
+#
+#########################################
+
+#########################################
+# DO NOT USE IN PRODUCTION:
+#########################################
+#
+# The following options from the dev config are INSECURE:
+#
+# no_root_squash    - Allows root on client to be root on server (DANGEROUS)
+# insecure          - Allows connections from non-privileged ports (INSECURE)
+# *                 - Wildcard allows ANY host to mount (VERY INSECURE)
+#
+# Example of INSECURE configuration (DO NOT USE):
+# /exports/student-volumes *(rw,sync,no_subtree_check,no_root_squash,insecure,fsid=0)
+#
+#########################################
+
+#########################################
+# Additional Security Recommendations:
+#########################################
+#
+# 1. Firewall Configuration:
+#    Only allow NFS ports from trusted networks:
+#    - Port 2049 (NFSv4)
+#    - Port 111 (rpcbind) - NFSv3 only
+#    - Port 20048 (mountd) - NFSv3 only
+#
+# 2. SELinux/AppArmor:
+#    Enable and configure mandatory access controls
+#
+# 3. Encryption:
+#    Use VPN or encrypted network overlay for NFS traffic
+#    Or use Kerberos with privacy (sec=krb5p)
+#
+# 4. Monitoring:
+#    - Monitor NFS logs for suspicious activity
+#    - Track mounted filesystems
+#    - Alert on unusual access patterns
+#
+# 5. Backup:
+#    - Regular backups of /exports/student-volumes
+#    - Test restore procedures
+#    - Consider snapshot-capable filesystem (ZFS, Btrfs)
+#
+# 6. Volume Management:
+#    - Consider using dedicated filesystem for NFS exports
+#    - Set quotas to prevent disk exhaustion
+#    - Implement cleanup procedures for old data
+#
+# 7. Network Segmentation:
+#    - Isolate NFS traffic on dedicated network
+#    - Use VLANs or network namespaces
+#    - Implement least-privilege access
+#
+#########################################
+
+#########################################
+# Testing Your Configuration:
+#########################################
+#
+# After making changes:
+#
+# 1. Validate syntax:
+#    exportfs -a -v
+#
+# 2. Check active exports:
+#    exportfs -v
+#
+# 3. Test mount from client:
+#    mount -t nfs -o vers=4 nfs-server:/exports/student-volumes /mnt/test
+#
+# 4. Verify permissions:
+#    - Test file creation as different users
+#    - Verify UID/GID mapping
+#    - Check that root is properly squashed
+#
+# 5. Monitor logs:
+#    tail -f /var/log/syslog | grep nfs
+#
+#########################################
+
+#########################################
+# Migration from Development:
+#########################################
+#
+# If migrating from dev configuration:
+#
+# 1. Backup existing data
+# 2. Update exports file with production settings
+# 3. Restart NFS server: systemctl restart nfs-server
+# 4. Remount on all clients with new options
+# 5. Verify permissions and access
+# 6. Test application functionality
+# 7. Monitor for issues
+#
+#########################################

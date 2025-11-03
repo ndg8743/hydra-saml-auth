@@ -36,13 +36,19 @@ build_images() {
 
     # Build hydra-saml-auth image
     echo -e "${BLUE}  Building hydra-saml-auth...${NC}"
-    docker build -t hydra-saml-auth:latest -f Dockerfile.hydra ..
+    if ! docker build -t hydra-saml-auth:latest -f Dockerfile.hydra ..; then
+        echo -e "${RED}Error: Failed to build hydra-saml-auth image${NC}"
+        exit 1
+    fi
 
     # Build openwebui-middleman image
     echo -e "${BLUE}  Building openwebui-middleman...${NC}"
-    docker build -t hydra-openwebui-middleman:latest -f Dockerfile.middleman ..
+    if ! docker build -t hydra-openwebui-middleman:latest -f Dockerfile.middleman ..; then
+        echo -e "${RED}Error: Failed to build openwebui-middleman image${NC}"
+        exit 1
+    fi
 
-    echo -e "${GREEN}  ✓ Images built${NC}"
+    echo -e "${GREEN}  ✓ Images built successfully${NC}"
 }
 
 # Load images into swarm nodes
@@ -51,18 +57,33 @@ load_images() {
 
     # Save images to tar files
     echo -e "${BLUE}  Saving images...${NC}"
-    docker save hydra-saml-auth:latest | gzip > /tmp/hydra-saml-auth.tar.gz
-    docker save hydra-openwebui-middleman:latest | gzip > /tmp/hydra-openwebui-middleman.tar.gz
+    if ! docker save hydra-saml-auth:latest | gzip > /tmp/hydra-saml-auth.tar.gz; then
+        echo -e "${RED}Error: Failed to save hydra-saml-auth image${NC}"
+        exit 1
+    fi
+    if ! docker save hydra-openwebui-middleman:latest | gzip > /tmp/hydra-openwebui-middleman.tar.gz; then
+        echo -e "${RED}Error: Failed to save openwebui-middleman image${NC}"
+        rm -f /tmp/hydra-saml-auth.tar.gz
+        exit 1
+    fi
 
     # Load into hydra-node
     echo -e "${BLUE}  Loading into hydra-node...${NC}"
-    gunzip -c /tmp/hydra-saml-auth.tar.gz | docker exec -i hydra-node docker load
-    gunzip -c /tmp/hydra-openwebui-middleman.tar.gz | docker exec -i hydra-node docker load
+    if ! gunzip -c /tmp/hydra-saml-auth.tar.gz | docker exec -i hydra-node docker load; then
+        echo -e "${RED}Error: Failed to load hydra-saml-auth into swarm${NC}"
+        rm -f /tmp/hydra-saml-auth.tar.gz /tmp/hydra-openwebui-middleman.tar.gz
+        exit 1
+    fi
+    if ! gunzip -c /tmp/hydra-openwebui-middleman.tar.gz | docker exec -i hydra-node docker load; then
+        echo -e "${RED}Error: Failed to load openwebui-middleman into swarm${NC}"
+        rm -f /tmp/hydra-saml-auth.tar.gz /tmp/hydra-openwebui-middleman.tar.gz
+        exit 1
+    fi
 
     # Cleanup
     rm -f /tmp/hydra-saml-auth.tar.gz /tmp/hydra-openwebui-middleman.tar.gz
 
-    echo -e "${GREEN}  ✓ Images loaded into swarm${NC}"
+    echo -e "${GREEN}  ✓ Images loaded successfully into swarm${NC}"
 }
 
 # Create overlay networks
@@ -84,10 +105,16 @@ deploy_core() {
     echo -e "${GREEN}Deploying core services stack...${NC}"
 
     # Copy stack file to hydra-node
-    docker cp ../stacks/core-services.yml hydra-node:/tmp/
+    if ! docker cp ../stacks/core-services.yml hydra-node:/tmp/; then
+        echo -e "${RED}Error: Failed to copy core-services.yml to swarm node${NC}"
+        exit 1
+    fi
 
     # Deploy stack
-    docker exec hydra-node docker stack deploy -c /tmp/core-services.yml core
+    if ! docker exec hydra-node docker stack deploy -c /tmp/core-services.yml core; then
+        echo -e "${RED}Error: Failed to deploy core services stack${NC}"
+        exit 1
+    fi
 
     echo -e "${GREEN}  ✓ Core services deployed${NC}"
 }
@@ -97,10 +124,16 @@ deploy_gpu() {
     echo -e "${GREEN}Deploying GPU services stack...${NC}"
 
     # Copy stack file to hydra-node
-    docker cp ../stacks/gpu-services.yml hydra-node:/tmp/
+    if ! docker cp ../stacks/gpu-services.yml hydra-node:/tmp/; then
+        echo -e "${RED}Error: Failed to copy gpu-services.yml to swarm node${NC}"
+        exit 1
+    fi
 
     # Deploy stack
-    docker exec hydra-node docker stack deploy -c /tmp/gpu-services.yml gpu
+    if ! docker exec hydra-node docker stack deploy -c /tmp/gpu-services.yml gpu; then
+        echo -e "${RED}Error: Failed to deploy GPU services stack${NC}"
+        exit 1
+    fi
 
     echo -e "${GREEN}  ✓ GPU services deployed${NC}"
 }

@@ -1,4 +1,25 @@
 # NFS exports for student volumes
 # Allow access from the Docker Swarm network (172.30.0.0/16)
+#
+# ⚠️  WARNING: DEVELOPMENT ONLY - INSECURE CONFIGURATION ⚠️
+#
+# This configuration uses insecure NFS options suitable ONLY for local development:
+# - no_root_squash: Allows root user on client to have root access on server
+# - insecure: Allows connections from ports above 1024
+# - *: Wildcard export allows any host to mount (second line)
+#
+# NEVER use these settings in production!
+#
+# For production, use:
+# - Replace wildcard (*) with specific IP ranges
+# - Use root_squash instead of no_root_squash
+# - Remove insecure option
+# - Add all_squash with anonuid/anongid for better security
+# - Configure proper firewall rules
+# - Use sec=krb5 for Kerberos authentication if possible
+#
+# Example production config:
+# /exports/student-volumes 10.0.0.0/24(rw,sync,no_subtree_check,root_squash,all_squash,anonuid=1000,anongid=1000,fsid=0)
+#
 /exports/student-volumes 172.30.0.0/16(rw,sync,no_subtree_check,no_root_squash,insecure,fsid=0)
 /exports/student-volumes *(rw,sync,no_subtree_check,no_root_squash,insecure,fsid=0)

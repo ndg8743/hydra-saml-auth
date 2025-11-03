@@ -64,16 +64,21 @@ services:
       retries: 5
 
   # Chimera node - Worker with GPU labels (for Jupyter)
+  # NOTE: GPU runtime is optional. If you don't have NVIDIA GPU/runtime installed,
+  #       comment out the 'runtime: nvidia' line and NVIDIA environment variables.
+  #       The node will still function for non-GPU workloads.
   chimera-node:
     image: docker:24-dind
     container_name: chimera-node
     hostname: chimera-node
     privileged: true
-    runtime: nvidia
+    # Uncomment if you have NVIDIA GPU and runtime installed:
+    # runtime: nvidia
     environment:
       - DOCKER_TLS_CERTDIR=/certs
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # Uncomment if you have NVIDIA GPU:
+      # - NVIDIA_VISIBLE_DEVICES=all
+      # - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     volumes:
       - chimera-docker-certs-ca:/certs/ca
       - chimera-docker-certs-client:/certs/client
@@ -110,16 +115,21 @@ services:
       retries: 5
 
   # Cerberus node - Worker with GPU labels (for Ollama)
+  # NOTE: GPU runtime is optional. If you don't have NVIDIA GPU/runtime installed,
+  #       comment out the 'runtime: nvidia' line and NVIDIA environment variables.
+  #       The node will still function for non-GPU workloads.
   cerberus-node:
     image: docker:24-dind
     container_name: cerberus-node
     hostname: cerberus-node
     privileged: true
-    runtime: nvidia
+    # Uncomment if you have NVIDIA GPU and runtime installed:
+    # runtime: nvidia
     environment:
       - DOCKER_TLS_CERTDIR=/certs
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # Uncomment if you have NVIDIA GPU:
+      # - NVIDIA_VISIBLE_DEVICES=all
+      # - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     volumes:
       - cerberus-docker-certs-ca:/certs/ca
       - cerberus-docker-certs-client:/certs/client
