@@ -32,6 +32,9 @@ RUN install -m 0755 -d /etc/apt/keyrings && \
     apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin && \
     rm -rf /var/lib/apt/lists/*
 
+# Ensure `python` maps to Python 3 for non-interactive use
+RUN apt-get update && apt-get install -y python-is-python3 && rm -rf /var/lib/apt/lists/*
+
 # Create student user
 RUN useradd -m -s /bin/bash -u 1000 student && \
     echo "student ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers && \
@@ -85,6 +88,10 @@ EXPOSE 8443 8888 9001
 
 # Set working directory
 WORKDIR /home/student
+
+# Append a nice PS1 to the student's bashrc without overwriting existing content
+RUN printf '\n# Hydra PS1\nexport PS1="\\[\\e[32m\\]\\u\\[\\e[0m\\]@\\[\\e[34m\\]\\h\\[\\e[0m\\]:\\[\\e[36m\\]\\w\\[\\e[0m\\] \\[\\e[33m\\][\\t]\\[\\e[0m\\]\\n$ "\n' >> /home/student/.bashrc \
+ && chown student:student /home/student/.bashrc
 
 # Run entrypoint
 ENTRYPOINT ["/entrypoint.sh"]
